@@ -1,0 +1,1 @@
+# singularity-centos-7-vagrant
