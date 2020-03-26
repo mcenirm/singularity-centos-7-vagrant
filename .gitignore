@@ -1,0 +1,5 @@
+/.vagrant/
+*.retry
+*.sif
+*_build.json
+*_run.json

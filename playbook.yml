@@ -1,0 +1,91 @@
+---
+- hosts: all
+  tasks:
+    - name: System configuration changes that might require a reboot
+      become: yes
+      block:
+        - name: Enable SELinux
+          selinux:
+            policy: targeted
+            state: enforcing
+          register: selinux_status
+        - name: Enable user namespaces
+          sysctl:
+            name: user.max_user_namespaces
+            value: "10000"
+            sysctl_file: "/etc/sysctl.d/user_namespaces.conf"
+            reload: no
+          register: sysctl_user_namespaces
+        - name: Reboot if necessary
+          when: selinux_status.reboot_required or sysctl_user_namespaces.changed
+          reboot:
+
+    - name: System configuration for Singularity
+      become: yes
+      block:
+        - package:
+            name: epel-release
+        - package:
+            name: singularity
+        - name: Enable fakeroot for user
+          loop:
+            - add
+            - enable
+          command:
+            argv:
+              - singularity
+              - config
+              - fakeroot
+              - "--{{ item }}"
+              - vagrant
+
+    - name: Unpriviliged tests (build and run)
+      become: no
+      block:
+        - name: Try fakeroot build
+          command:
+            chdir: /vagrant
+            creates: /vagrant/lolcow.sif
+            argv:
+              - singularity
+              - build
+              - --fakeroot
+              - lolcow.sif
+              - lolcow.def
+          register: fakeroot_build
+        - copy:
+            dest: /vagrant/fakeroot_build.json
+            content: "{{ fakeroot_build }}"
+          when: fakeroot_build.changed
+        - name: Try normal run
+          command:
+            chdir: /vagrant
+            argv:
+              - singularity
+              - exec
+              - lolcow.sif
+              - cowsay
+              - "Normal run"
+          register: normal_run
+        - copy:
+            dest: /vagrant/normal_run.json
+            content: "{{ normal_run }}"
+        - name: Try userns run
+          command:
+            chdir: /vagrant
+            argv:
+              - singularity
+              - exec
+              - --userns
+              - lolcow.sif
+              - cowsay
+              - "With userns"
+          register: userns_run
+        - copy:
+            dest: /vagrant/userns_run.json
+            content: "{{ userns_run }}"
+# TODO
+# - test without setuid helper
+# - test with kernel >= 3.18 for OverlayFS
+# - test with GPFS (multi-VM setup?)
+# - test with sandbox directories
